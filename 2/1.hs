@@ -4,35 +4,23 @@ module Main where
 
 import Test.Hspec
 import Data.List ( foldl' )
-import Data.Maybe ( fromJust )
+import Data.Char ( digitToInt )
 
 decimalToRoman :: String -> String
 decimalToRoman = integerToRoman . decimalToInteger
     where
 
       decimalToInteger = foldl' step 0
-        where step n d = 10 * n + (fromJust $ lookup d decimals)
+        where step n d = 10 * n + (digitToInt d)
 
       integerToRoman n =
-        let (val, letter) = greatestPair n
-        in if n <= 0
-           then ""
-           else letter : integerToRoman (n - val)
+        if n <= 0
+          then ""
+          else let (val, letter) = greatestPair n
+               in letter : integerToRoman (n - val)
 
       greatestPair n =
         head . filter ((<= n) . fst) $ values
-
-      decimals = [
-        ('0', 0),
-        ('1', 1),
-        ('2', 2),
-        ('3', 3),
-        ('4', 4),
-        ('5', 5),
-        ('6', 6),
-        ('7', 7),
-        ('8', 8),
-        ('9', 9)]
 
       values = [
         (100, 'C'),
