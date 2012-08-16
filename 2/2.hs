@@ -1,19 +1,81 @@
--- Convert an arithmetic expression to instructions
+-- Convert arithmetic expressions to instructions
 -- for an abstract stack machine
+
+-- Grammar:
+--
+-- program    = statement*
+-- statement  = expression ';'
+-- expression = term (+ term)*
+-- term       = factor * factor | factor / factor
+-- factor     = number | '(' expression ')'
+--
 
 module Main where
 
 import Test.Hspec
 import Control.Monad.State
+import Control.Applicative
+import Data.Char
 
-expressionToStackCode :: String -> [Instruction]
-expressionToStackCode s = evalState action []
+expressionToStackCode :: String -> Either String [Instruction]
+expressionToStackCode = evalStateT program
   where
-    action = do
-      get
-      return [Push 5]
 
--- Primitive instructions for an abstract state machine
+    program :: Parser [Instruction]
+    program = do
+      look <- lookahead
+      case look of
+        Nothing -> return []
+        _       -> (++) <$> statement <*> program
+
+    statement = do
+      expr <- expression
+      match ';'
+      return expr
+
+    expression = do
+      term1 <- term
+      lookahead_char <- lookahead
+      case lookahead_char of
+        Just '+' -> do
+          match '+'
+          term2 <- term
+          return [Push $ term1 + term2]
+        Just '-' -> do
+          match '-'
+          term2 <- term
+          return [Push $ term1 - term2]
+        _   -> return [Push term1]
+
+    term = factor
+
+    factor = number
+
+    number :: Parser Int
+    number = do
+      str <- takeWhile isDigit <$> get
+      consume $ length str
+      return $ read str
+
+    match :: Char -> Parser ()
+    match s = do
+      lookahead_char <- lookahead
+      case lookahead_char of
+        Just s  -> consume 1
+        _       -> error ("Failed to match character '" ++ [s] ++ "'")
+
+    lookahead :: Parser (Maybe Char)
+    lookahead = safeHead <$> get
+
+    consume :: Int -> Parser ()
+    consume n = get >>= put . drop n
+
+    error :: String -> Parser ()
+    error = lift . Left
+
+type Parser = StateT String (Either String)
+
+-- Primitive instructions for an abstract stack machine
 data Instruction =
   Push Int |
   RValue Location |
@@ -25,9 +87,23 @@ data Instruction =
 
 type Location = String
 
-main = hspec $
-  describe "expressionToStackCode" $
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead xs = Just $ head xs
 
-    it "works for integers" $ do
-      expressionToStackCode "5" `shouldBe` [Push 5]
-      expressionToStackCode "6" `shouldBe` [Push 6]
+-- Tests
+main = hspec $
+  describe "expressionToStackCode" $ do
+
+    it "handles integers" $ do
+      expressionToStackCode "53;" `shouldBe` Right [Push 53]
+      expressionToStackCode "63;" `shouldBe` Right [Push 63]
+
+    it "handles addition and subtraction" $ do
+      expressionToStackCode "51+32;" `shouldBe` Right [Push 83]
+      expressionToStackCode "53-31;" `shouldBe` Right [Push 22]
+
+    it "handles multiple statements" $ do
+      expressionToStackCode "11;21;" `shouldBe` Right [Push 11, Push 21]
+      expressionToStackCode "2+2;3-3;" `shouldBe` Right [Push 4, Push 0]
+
