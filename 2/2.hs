@@ -5,8 +5,8 @@
 --
 -- program    = statement*
 -- statement  = expression ';'
--- expression = term (+ term)*
--- term       = factor * factor | factor / factor
+-- expression = term (+ term)* | term (- term)*
+-- term       = factor (* factor)* | factor (/ factor)*
 -- factor     = number | '(' expression ')'
 --
 
@@ -47,7 +47,19 @@ expressionToStackCode = evalStateT program
           return [Push $ term1 - term2]
         _   -> return [Push term1]
 
-    term = factor
+    term = do
+      fact1 <- factor
+      lookahead_char <- lookahead
+      case lookahead_char of
+        Just '*' -> do
+          consume 1
+          fact2 <- factor
+          return $ fact1 * fact2
+        Just '/' -> do
+          consume 1
+          fact2 <- factor
+          return $ fact1 `div` fact2
+        _   -> return fact1
 
     factor = number
 
@@ -102,6 +114,10 @@ main = hspec $
     it "handles addition and subtraction" $ do
       expressionToStackCode "51+32;" `shouldBe` Right [Push 83]
       expressionToStackCode "53-31;" `shouldBe` Right [Push 22]
+
+    it "handles multiplication and division" $ do
+      expressionToStackCode "51*3;" `shouldBe` Right [Push 153]
+      expressionToStackCode "52/2;" `shouldBe` Right [Push 26]
 
     it "handles multiple statements" $ do
       expressionToStackCode "11;21;" `shouldBe` Right [Push 11, Push 21]
