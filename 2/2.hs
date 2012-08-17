@@ -1,10 +1,10 @@
--- Convert arithmetic expressions to instructions
--- for an abstract stack machine
+-- Convert a list of simple statements into
+-- instructions for an abstract stack machine
 
 -- Grammar:
 --
--- program    = statement*
--- statement  = expression ';'
+-- program    = (statement ';')*
+-- statement  = assignment | expression
 -- expression = term (+ term)* | term (- term)*
 -- term       = factor (* factor)* | factor (/ factor)*
 -- factor     = number | '(' expression ')'
@@ -17,8 +17,8 @@ import Control.Monad.State
 import Control.Applicative
 import Data.Char
 
-expressionToStackCode :: String -> Either String [Instruction]
-expressionToStackCode = evalStateT program
+toStackCode :: String -> Either String [Instruction]
+toStackCode = evalStateT program
   where
 
     program :: Parser [Instruction]
@@ -31,37 +31,45 @@ expressionToStackCode = evalStateT program
     statement = do
       expr <- expression
       match ';'
-      return expr
+      return [Push expr]
 
     expression = do
-      term1 <- term
-      lookahead_char <- lookahead
-      case lookahead_char of
+      first <- term
+      look <- lookahead
+      case look of
         Just '+' -> do
           match '+'
-          term2 <- term
-          return [Push $ term1 + term2]
+          rest <- expression
+          return $ first + rest
         Just '-' -> do
           match '-'
-          term2 <- term
-          return [Push $ term1 - term2]
-        _   -> return [Push term1]
+          rest <- expression
+          return $ first - rest
+        _   -> return first
 
     term = do
-      fact1 <- factor
-      lookahead_char <- lookahead
-      case lookahead_char of
+      first <- factor
+      look <- lookahead
+      case look of
         Just '*' -> do
           consume 1
-          fact2 <- factor
-          return $ fact1 * fact2
+          rest <- term
+          return $ first * rest
         Just '/' -> do
           consume 1
-          fact2 <- factor
-          return $ fact1 `div` fact2
-        _   -> return fact1
+          rest <- term
+          return $ first `div` rest
+        _   -> return first
 
-    factor = number
+    factor = do
+      look <- lookahead
+      case look of
+        Just s | isDigit s -> number
+        Just '(' -> do
+          consume 1
+          expr <- expression
+          match ')'
+          return expr
 
     number :: Parser Int
     number = do
@@ -71,8 +79,8 @@ expressionToStackCode = evalStateT program
 
     match :: Char -> Parser ()
     match s = do
-      lookahead_char <- lookahead
-      case lookahead_char of
+      look <- lookahead
+      case look of
         Just s  -> consume 1
         _       -> error ("Failed to match character '" ++ [s] ++ "'")
 
@@ -105,21 +113,25 @@ safeHead xs = Just $ head xs
 
 -- Tests
 main = hspec $
-  describe "expressionToStackCode" $ do
+  describe "toStackCode" $ do
 
     it "handles integers" $ do
-      expressionToStackCode "53;" `shouldBe` Right [Push 53]
-      expressionToStackCode "63;" `shouldBe` Right [Push 63]
+      toStackCode "53;" `shouldBe` Right [Push 53]
+      toStackCode "63;" `shouldBe` Right [Push 63]
 
     it "handles addition and subtraction" $ do
-      expressionToStackCode "51+32;" `shouldBe` Right [Push 83]
-      expressionToStackCode "53-31;" `shouldBe` Right [Push 22]
+      toStackCode "51+32;" `shouldBe` Right [Push 83]
+      toStackCode "53-31;" `shouldBe` Right [Push 22]
 
     it "handles multiplication and division" $ do
-      expressionToStackCode "51*3;" `shouldBe` Right [Push 153]
-      expressionToStackCode "52/2;" `shouldBe` Right [Push 26]
+      toStackCode "51*3;" `shouldBe` Right [Push 153]
+      toStackCode "52/2;" `shouldBe` Right [Push 26]
 
     it "handles multiple statements" $ do
-      expressionToStackCode "11;21;" `shouldBe` Right [Push 11, Push 21]
-      expressionToStackCode "2+2;3-3;" `shouldBe` Right [Push 4, Push 0]
+      toStackCode "11;21;" `shouldBe` Right [Push 11, Push 21]
+      toStackCode "2+2;3-3;" `shouldBe` Right [Push 4, Push 0]
+
+    it "handles multiple operators" $ do
+      toStackCode "1+(2+3);" `shouldBe` Right [Push 6]
+      toStackCode "2*(3*4);" `shouldBe` Right [Push 24]
 
